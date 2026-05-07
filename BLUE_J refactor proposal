@@ -1,0 +1,217 @@
+import random
+import copy
+import sys
+
+# ==========================================
+# THE P.D.M. GEM GOVERNOR (STATE MACHINE)
+# ==========================================
+
+pdm = {
+    "world_tension": 0,
+    "narrative_phase": 1,
+    "momentum": 0,
+    "difficulty_mod": 1.0
+}
+
+player = {
+    "name": "",
+    "hp": 150,
+    "max_hp": 150,
+    "attack": 15,
+    "defense": 5,
+    "gold": 0,
+    "level": 1,
+    "xp": 0
+}
+
+inventory = []
+
+foes = [
+    {"name": "Snake", "hp": 10, "atk": 10, "gold": 10, "xp": 10},
+    {"name": "Wolf", "hp": 25, "atk": 5, "gold": 5, "xp": 10},
+    {"name": "Rat", "hp": 10, "atk": 2, "gold": 5, "xp": 5},
+    {"name": "Bandit", "hp": 50, "atk": 5, "gold": 10, "xp": 20},
+    {"name": "Goblin", "hp": 30, "atk": 8, "gold": 10, "xp": 15},
+    {"name": "Cursed Plant", "hp": 50, "atk": 20, "gold": 35, "xp": 45},
+    {"name": "Skeleton", "hp": 70, "atk": 10, "gold": 20, "xp": 35},
+    {"name": "Mage", "hp": 20, "atk": 20, "gold": 30, "xp": 40},
+    {"name": "Orc", "hp": 60, "atk": 14, "gold": 25, "xp": 30},
+    {"name": "Ghoul", "hp": 100, "atk": 15, "gold": 30, "xp": 40},
+    {"name": "Dragon", "hp": 350, "atk": 30, "gold": 250, "xp": 150},
+]
+
+shop_inventory = {
+    "Health Potion": {"cost": 20, "hp": 30},
+    "Sword": {"cost": 40, "attack": 10, "type": "gear"},
+    "Shield": {"cost": 50, "defense": 8, "type": "gear"}
+}
+
+
+def calculate_damage(atk, dfn, is_crit=False):
+    multiplier = 2.0 if is_crit else 1.0
+    return int(max(1, (atk * multiplier) - dfn))
+
+
+def update_pdm_state(event):
+    global pdm
+
+    if event == "victory":
+        pdm["world_tension"] += 4
+        pdm["momentum"] += 1
+
+    elif event == "flee":
+        pdm["momentum"] -= 2
+        pdm["world_tension"] += 2
+
+    if pdm["world_tension"] > 40 and pdm["narrative_phase"] == 1:
+        pdm["narrative_phase"] = 2
+        print("\n[P.D.M.]: The air grows cold. The monsters are starting to fear you.")
+
+    elif pdm["world_tension"] > 100 and pdm["narrative_phase"] == 2:
+        pdm["narrative_phase"] = 3
+        print("\n[P.D.M.]: The Dragon of New Meaux awakens. The finale begins.")
+
+    pdm["difficulty_mod"] = 1.0 + (pdm["world_tension"] / 150.0)
+
+
+def get_pdm_enemy(is_boss=False):
+    if is_boss:
+        enemy = copy.deepcopy(foes[-1])
+
+    else:
+        max_xp = 15 + pdm["world_tension"]
+
+        possible = [
+            f for f in foes[:-1]
+            if f["xp"] <= max_xp
+        ]
+
+        enemy = copy.deepcopy(
+            random.choice(possible if possible else [foes[0]])
+        )
+
+    enemy["hp"] = int(enemy["hp"] * pdm["difficulty_mod"])
+    enemy["atk"] = int(enemy["atk"] * pdm["difficulty_mod"])
+
+    return enemy
+
+
+def rigorous_input(prompt, options):
+    while True:
+        choice = input(prompt).strip()
+
+        if choice in options:
+            return choice
+
+        print(f"[!] Invalid input. Options: {options}")
+
+
+def fight():
+    is_boss = (
+        pdm["narrative_phase"] == 3 and random.random() < 0.3
+    )
+
+    enemy = get_pdm_enemy(is_boss)
+
+    print(f"\n[P.D.M.]: A {enemy['name']} blocks your path!")
+
+    while player["hp"] > 0 and enemy["hp"] > 0:
+
+        print(
+            f"\n{player['name']}: {player['hp']} HP | "
+            f"{enemy['name']}: {enemy['hp']} HP"
+        )
+
+        action = rigorous_input(
+            "[1] Strike [2] Potion [3] Flee\n> ",
+            ["1", "2", "3"]
+        )
+
+        if action == "1":
+
+            crit = (random.randint(1, 6) == 6)
+
+            dmg = calculate_damage(
+                player["attack"],
+                enemy["atk"] * 0.2,
+                crit
+            )
+
+            enemy["hp"] -= dmg
+
+            print(f"-> You hit for {dmg} damage!")
+
+            if enemy["hp"] > 0:
+                e_dmg = calculate_damage(
+                    enemy["atk"],
+                    player["defense"]
+                )
+
+                player["hp"] -= e_dmg
+
+                print(f"<- {enemy['name']} hits for {e_dmg}!")
+
+        elif action == "2":
+
+            if "Health Potion" in inventory:
+                player["hp"] = min(
+                    player["max_hp"],
+                    player["hp"] + 40
+                )
+
+                inventory.remove("Health Potion")
+
+                print("Used Potion.")
+
+            else:
+                print("No potions!")
+
+        elif action == "3":
+
+            if random.random() > 0.4:
+                print("Escaped!")
+                update_pdm_state("flee")
+                return
+
+            else:
+                print("Failed to flee!")
+                player["hp"] -= 5
+
+    if player["hp"] <= 0:
+        print("\nGAME OVER.")
+        sys.exit()
+
+    else:
+        player["xp"] += enemy["xp"]
+        player["gold"] += enemy["gold"]
+
+        update_pdm_state("victory")
+
+
+def main():
+    player["name"] = input("Name: ").capitalize()
+
+    while True:
+
+        print(
+            f"\nPhase: {pdm['narrative_phase']} | "
+            f"Tension: {pdm['world_tension']}"
+        )
+
+        act = rigorous_input(
+            "1. Explore 2. Shop 3. Exit\n> ",
+            ["1", "2", "3"]
+        )
+
+        if act == "1":
+            fight()
+
+        elif act == "2":
+            pass  # Shop logic goes here
+
+        elif act == "3":
+            break
+
+
+if __name__ == "__main__":
+    main()
